@@ -168,6 +168,13 @@ func (d *Deployer) StepConvertVHD() error {
 	return d.Add(constants.OpConvertVHD,
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(constants.OpGenEFIRawDisk),
+		// GCE and VHD both consume the single `kairos-*.raw` in place — GCE
+		// truncates it to a GB boundary and VHD renames it away. Running them in
+		// parallel corrupts the raw or makes VHD's rename remove the file GCE
+		// still needs. When both are requested, order VHD after GCE (GCE mutates
+		// but leaves the raw; VHD consumes it last). Conditional so a VHD-only
+		// build does not depend on a disabled GCE step.
+		herd.ConditionalOption(func() bool { return d.Config.Disk.GCE }, herd.WithDeps(constants.OpConvertGCE)),
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
