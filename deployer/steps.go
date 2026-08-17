@@ -161,6 +161,12 @@ func (d *Deployer) StepConvertGCE() error {
 	return d.Add(constants.OpConvertGCE,
 		herd.EnableIf(func() bool { return d.Config.Disk.GCE }),
 		herd.WithDeps(constants.OpGenEFIRawDisk),
+		// MAAS reads the single `kairos-*.raw` (os.Open → gzip) while GCE
+		// truncates it in place; in parallel MAAS gzips a half-truncated image.
+		// When both are requested, run GCE after MAAS so MAAS compresses the
+		// original raw. Conditional so a GCE-only build does not wait on a
+		// disabled MAAS step.
+		herd.ConditionalOption(func() bool { return d.Config.Disk.MAAS }, herd.WithDeps(constants.OpConvertMAAS)),
 		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath())))
 }
 
@@ -168,6 +174,11 @@ func (d *Deployer) StepConvertVHD() error {
 	return d.Add(constants.OpConvertVHD,
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(constants.OpGenEFIRawDisk),
+		// MAAS reads the single `kairos-*.raw` while VHD renames it away; in
+		// parallel MAAS's glob→open races the rename and fails with "no such
+		// file". When both are requested, run VHD after MAAS. Conditional so a
+		// VHD-only build does not wait on a disabled MAAS step.
+		herd.ConditionalOption(func() bool { return d.Config.Disk.MAAS }, herd.WithDeps(constants.OpConvertMAAS)),
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
